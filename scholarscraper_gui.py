@@ -948,6 +948,26 @@ class Handler(http.server.BaseHTTPRequestHandler):
             except Exception as e:
                 self._json_response({"error": str(e)}, 500)
 
+        elif path == "/api/open-file":
+            try:
+                params = json.loads(body.decode("utf-8")) if body else {}
+            except json.JSONDecodeError:
+                self._json_response({"error": "Invalid JSON"}, 400)
+                return
+            filepath = params.get("path", "")
+            if not filepath:
+                self._json_response({"error": "No path given"}, 400)
+                return
+            fp = Path(filepath)
+            if not fp.exists():
+                self._json_response({"error": f"File not found: {fp}"}, 404)
+                return
+            try:
+                _open_file(str(fp))
+                self._json_response({"ok": True, "path": str(fp)})
+            except Exception as e:
+                self._json_response({"error": str(e)}, 500)
+
         else:
             self.send_error(404)
 
@@ -1376,11 +1396,11 @@ table.pub-table td {
       <div class="card-header">⚙ Configuration</div>
       <div class="card-body">
         <div class="form-row">
-          <div class="form-group" style="flex:2">
+          <div class="form-group">
             <label>Scholar ID or Profile URL</label>
             <input type="text" id="scholarId" placeholder="r1tm9b4AAAAJ or full URL">
           </div>
-          <div class="form-group">
+          <div class="form-group" style="flex:2">
             <label>Output Directory</label>
             <input type="text" id="outputDir" value="">
           </div>
@@ -1639,7 +1659,7 @@ function renderTable() {
     const sel = globalIdx === selectedIdx ? ' selected' : '';
     let links = '';
     if (p.doi) links += `<a href="https://doi.org/${p.doi}" target="_blank" class="link-doi" onclick="event.stopPropagation()">DOI</a>`;
-    if (p.pdf_file) links += `<a href="#" class="link-pdf" onclick="event.stopPropagation()">PDF</a>`;
+    if (p.pdf_file) links += `<a href="#" class="link-pdf" onclick="event.stopPropagation(); openPubPdf('${escAttr(p.pdf_file)}')">PDF</a>`;
     if (p.scholar_link) links += `<a href="${p.scholar_link}" target="_blank" class="link-scholar" onclick="event.stopPropagation()">GS</a>`;
     return `<tr class="${sel}" onclick="selectPub(${globalIdx})">
       <td class="td-year" style="color:var(--text-dim)">${i+1}</td>
@@ -1655,6 +1675,22 @@ function renderTable() {
 
 function escHtml(s) {
   return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function escAttr(s) {
+  return s.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+}
+
+async function openPubPdf(filepath) {
+  try {
+    const res = await fetch('/api/open-file', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({path: filepath}),
+    });
+    const data = await res.json();
+    if (data.error) showToast('✗ ' + data.error);
+    else showToast('✓ Opening PDF...');
+  } catch (e) { showToast('✗ Failed to open PDF'); }
 }
 
 // ── BibTeX preview ──
