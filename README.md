@@ -48,6 +48,8 @@ SKIP_DOI=1 ./scholar_publications.sh r1tm9b4AAAAJ
 - One-click copy: individual entry, citation key, or all BibTeX
 - Dark/light theme toggle
 
+![ScholarScraper GUI](gui_annotated.png)
+
 ## Output Structure
 
 ```
