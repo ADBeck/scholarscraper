@@ -758,6 +758,17 @@ def _generate_latex(pubs, tex_path, scholar_id):
 
 scraper_thread: Optional[threading.Thread] = None
 
+
+def _open_file(path: str):
+    """Open a file or folder with the system's default application. Cross-platform."""
+    system = platform.system()
+    if system == "Windows":
+        os.startfile(path)  # type: ignore[attr-defined]
+    elif system == "Darwin":
+        subprocess.Popen(["open", path])
+    else:
+        subprocess.Popen(["xdg-open", path])
+
 class Handler(http.server.BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         pass  # suppress server logs
@@ -904,6 +915,38 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 state["log"] = []
                 state["error"] = ""
             self._json_response({"ok": True})
+
+        elif path == "/api/open-pdf":
+            with state_lock:
+                out = state.get("output_dir", "")
+            if not out:
+                self._json_response({"error": "No output directory"}, 400)
+                return
+            pdf_path = Path(out) / "publications.pdf"
+            if not pdf_path.exists():
+                self._json_response({"error": f"PDF not found: {pdf_path}"}, 404)
+                return
+            try:
+                _open_file(str(pdf_path))
+                self._json_response({"ok": True, "path": str(pdf_path)})
+            except Exception as e:
+                self._json_response({"error": str(e)}, 500)
+
+        elif path == "/api/open-folder":
+            with state_lock:
+                out = state.get("output_dir", "")
+            if not out:
+                self._json_response({"error": "No output directory"}, 400)
+                return
+            folder = Path(out)
+            if not folder.exists():
+                self._json_response({"error": f"Folder not found: {folder}"}, 404)
+                return
+            try:
+                _open_file(str(folder))
+                self._json_response({"ok": True, "path": str(folder)})
+            except Exception as e:
+                self._json_response({"error": str(e)}, 500)
 
         else:
             self.send_error(404)
@@ -1344,17 +1387,17 @@ table.pub-table td {
         </div>
         <div class="form-row">
           <div class="form-group">
-            <label>Unpaywall Email (optional)</label>
-            <input type="text" id="unpaywallEmail" placeholder="me@university.edu">
+            <label>Institutional email, otherwise no PDF download</label>
+            <input type="text" id="unpaywallEmail" placeholder="xxx@my-uni.edu">
           </div>
           <div class="form-group">
             <label>Scholar Cookie (optional)</label>
-            <input type="text" id="cookie" placeholder="NID=...; GSP=...">
+            <input type="text" id="cookie" placeholder="Paste cookie from browser DevTools (F12 → Network → Cookie header)">
           </div>
         </div>
         <div class="form-row">
           <div class="form-group">
-            <label>Include PDFs from folder (optional)</label>
+            <label>Include PDFs from folder (optional), not fully working</label>
             <input type="text" id="includePdfDir" placeholder="/home/user/Papers or C:\Papers — matched by title">
           </div>
         </div>
@@ -1364,6 +1407,8 @@ table.pub-table td {
           </label>
           <div style="display:flex; gap:0.5rem;">
             <button class="btn btn-ghost btn-sm" onclick="resetAll()">Reset</button>
+            <button class="btn btn-ghost btn-sm" id="btnOpenPdf" onclick="openPdf()" style="display:none">📄 Open PDF</button>
+            <button class="btn btn-ghost btn-sm" id="btnOpenFolder" onclick="openFolder()" style="display:none">📂 Open Folder</button>
             <button class="btn btn-primary" id="btnScrape" onclick="startScrape()">▶ Start Scraping</button>
           </div>
         </div>
@@ -1517,6 +1562,11 @@ function updateUI(s) {
   // Button
   document.getElementById('btnScrape').disabled = running;
   document.getElementById('btnScrape').textContent = running ? '⏳ Running...' : '▶ Start Scraping';
+
+  // Show/hide open buttons
+  const isDone = s.status === 'done';
+  document.getElementById('btnOpenPdf').style.display = isDone ? '' : 'none';
+  document.getElementById('btnOpenFolder').style.display = isDone ? '' : 'none';
 
   // Stats
   document.getElementById('statTotal').textContent = s.stats.total || '—';
@@ -1696,8 +1746,28 @@ async function resetAll() {
   document.getElementById('bibPreview').innerHTML = '<div class="bib-placeholder">Click a publication to preview its BibTeX entry</div>';
   document.getElementById('btnCopyBib').disabled = true;
   document.getElementById('btnCopyKey').disabled = true;
+  document.getElementById('btnOpenPdf').style.display = 'none';
+  document.getElementById('btnOpenFolder').style.display = 'none';
   renderTable();
   showToast('Reset complete');
+}
+
+async function openPdf() {
+  try {
+    const res = await fetch('/api/open-pdf', { method: 'POST' });
+    const data = await res.json();
+    if (data.error) showToast('✗ ' + data.error);
+    else showToast('✓ Opening PDF...');
+  } catch (e) { showToast('✗ Failed to open PDF'); }
+}
+
+async function openFolder() {
+  try {
+    const res = await fetch('/api/open-folder', { method: 'POST' });
+    const data = await res.json();
+    if (data.error) showToast('✗ ' + data.error);
+    else showToast('✓ Opening folder...');
+  } catch (e) { showToast('✗ Failed to open folder'); }
 }
 
 // ── Init ──
